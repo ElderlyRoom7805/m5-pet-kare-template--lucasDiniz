@@ -56,3 +56,70 @@ class PetView(APIView, PageNumberPagination):
 
         return self.get_paginated_response(serializer.data)
 
+
+class PetDetailView(APIView, PageNumberPagination):
+    def get(self, request: Request, pet_id: int) -> Response:
+        try:
+            pet = Pet.objects.get(pk=pet_id)
+        except Pet.DoesNotExist:
+            return Response({"detail": "Not found."}, status.HTTP_404_NOT_FOUND)
+
+        serializer = PetSerializer(pet)
+
+        return Response(serializer.data, status.HTTP_200_OK)
+
+    def patch(self, request: Request, pet_id: int) -> Response:
+        try:
+            pet = Pet.objects.get(pk=pet_id)
+        except Pet.DoesNotExist:
+            return Response({"detail": "Not found."}, status.HTTP_404_NOT_FOUND)
+
+        update = PetSerializer(data=request.data, partial=True)
+        update.is_valid(raise_exception=True)
+
+        group = update.validated_data.pop("group", None)
+        traits = update.validated_data.pop("traits", None)
+
+        trait_list = []
+
+        if traits:
+            for trait in traits:
+                created_trait = Trait.objects.filter(name__iexact=trait["name"]).first()
+
+                if not created_trait:
+                    created_trait = Trait.objects.create(**trait)
+
+                trait_list.append(created_trait)
+
+            pet.traits.set(trait_list)
+
+        if group:
+            created_group = Group.objects.filter(
+                scientific_name__iexact=group["scientific_name"]
+            ).first()
+
+            if not created_group:
+                created_group = Group.objects.create(**group)
+
+            pet.group = created_group
+        
+        new_pet = update.validated_data.items()
+        
+        for key, value in new_pet:
+            setattr(pet, key, value)
+
+        pet.save()
+
+        serializer = PetSerializer(pet)
+
+        return Response(serializer.data, status.HTTP_200_OK)
+
+    def delete(self, request: Request, pet_id: int) -> Response:
+        try:
+            pet = Pet.objects.get(pk=pet_id)
+        except Pet.DoesNotExist:
+            return Response({"detail": "Not found."}, status.HTTP_404_NOT_FOUND)
+
+        pet.delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
